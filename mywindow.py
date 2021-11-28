@@ -19,7 +19,13 @@ class MyWindow(QMainWindow):
         fit = QAction("fit", self)
         tb.addAction(fit)
         tb.actionTriggered[QAction].connect(self.tbpressed)
+        setGrid = QAction("setGrid", self)
+        tb.addAction(setGrid)
+        tb.actionTriggered[QAction].connect(self.tbpressed)
 
     def tbpressed(self, a):
         if a.text() == "fit":
             self.canvas.fitWorldToViewport()
+        elif a.text() == "setGrid":
+            self.canvas.setGridPoints()
+

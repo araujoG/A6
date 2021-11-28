@@ -2,6 +2,7 @@ from PyQt5 import QtCore, QtOpenGL
 from PyQt5.QtWidgets import *
 from OpenGL.GL import *
 from hetool.hetool import *
+from mywidget import MyWidget
 
 class MyCanvas(QtOpenGL.QGLWidget):
     def __init__(self):
@@ -18,6 +19,11 @@ class MyCanvas(QtOpenGL.QGLWidget):
         self.m_pt0 = QtCore.QPoint(0.0, 0.0)
         self.m_pt1 = QtCore.QPoint(0.0, 0.0)
 
+        self.widget = MyWidget(self)
+        self.gridEnabled = False
+        self.gridPoints = []
+
+        self.tol = 0.01
         self.hemodel = HeModel()
         self.heview = HeView(self.hemodel)
         self.hecontroller = HeController(self.hemodel)
@@ -55,13 +61,15 @@ class MyCanvas(QtOpenGL.QGLWidget):
         # clear the buffer with the current clear color
         glClear(GL_COLOR_BUFFER_BIT)
         # draw the model
-        if (self.m_model == None) or (self.m_model.isEmpty()):
-            return
+        # if (self.m_model == None) or (self.m_model.isEmpty()):
+        #     return
 
         glCallList(self.list)
         glDeleteLists(self.list, 1)
         self.list = glGenLists(1)
         glNewList(self.list, GL_COMPILE)
+
+        # Desenhando a coleta
         pt0_U = self.convertPtCoordsToUniverse(self.m_pt0)
         pt1_U = self.convertPtCoordsToUniverse(self.m_pt1)
         glColor3f(1.0, 0.0, 0.0)
@@ -70,19 +78,16 @@ class MyCanvas(QtOpenGL.QGLWidget):
         glVertex2f(pt1_U.x(), pt1_U.y())
         glEnd()
 
-        if not((self.m_model == None) or (self.m_model.isEmpty())):
-            verts = self.m_model.getVerts()
-
-            glColor3f(0.0, 1.0, 0.0)  # green
-
-            glBegin(GL_TRIANGLES)
-            for vtx in verts:
-                glVertex2f(vtx.getX(), vtx.getY())
-            glEnd()
-
+        if not((self.m_model == None) and (self.m_model.isEmpty())):
+            # Desenhando um triangulo
+            # verts = self.m_model.getVerts()
+            # glColor3f(0.0, 1.0, 0.0)  # green
+            # glBegin(GL_TRIANGLES)
+            # for vtx in verts:
+            #     glVertex2f(vtx.getX(), vtx.getY())
+            # glEnd()
             curves = self.m_model.getCurves()
             glColor3f(0.0, 0.0, 1.0)  # blue
-
             glBegin(GL_LINES)
             for curv in curves:
                 glVertex2f(curv.getP1().getX(), curv.getP1().getY())
@@ -90,28 +95,45 @@ class MyCanvas(QtOpenGL.QGLWidget):
             glEnd()
         
         if not self.heview.isEmpty():
+            print("teste")
             patches = self.heview.getPatches()
-
+            print(len(patches))
+            glColor3f(0.0, 0.5, 1.0)
             for pat in patches:
-                pts = pat.getPoints()
-                triangs = Tesselation.tessellate(pts)
-                for j in range(0, len(triangs)):
-                    glColor3f(1.0, 0.0, 1.0)
+                triangs = Tesselation.tessellate(pat.getPoints())
+                for triang in triangs:
                     glBegin(GL_TRIANGLES)
-                    glVertex2d(pts[triangs][j][0].getX(), pts[triangs][j][0].getY())
-                    glVertex2d(pts[triangs][j][1].getX(), pts[triangs][j][1].getY())
-                    glVertex2d(pts[triangs][j][2].getX(), pts[triangs][j][2].getY())
+                    for vtx in triang:
+                        glVertex2f(vtx.getX(), vtx.getY())
                     glEnd()
                 
-        segments = self.heview.getSegments()
-        for curves in segments:
-            points = curves.getPointsToDraw()
-            glColor3f(0.0, 1.0, 1.0)
-            glBegin(GL_LINES)
-            for ptc in points:
-                glVertex2f(ptc[0].getX(), ptc[0].getY())
-                glVertex2f(ptc[1].getX(), ptc[1].getY())
+            segments = self.heview.getSegments()
+            print(len(segments))
+            glColor3f(0.0, 0.0, 1.0)
+            for curves in segments:
+                points = curves.getPointsToDraw()
+                glBegin(GL_LINES)
+                glVertex2f(points[0].getX(), points[0].getY())
+                glVertex2f(points[1].getX(), points[1].getY())
+                glEnd()
+
+            points = self.heview.getPoints()
+            glColor3f(1.0, 0.0, 0.0)
+            glPointSize(5.0)
+            glBegin(GL_POINTS)
+            for point in points:
+                glVertex2f(point.getX(), point.getY())
             glEnd()
+
+            if len(self.gridPoints) > 0:
+                patches = self.heview.getPatches()
+                glColor3f(1.0, 1.0, 1.0)
+                glBegin(GL_POINTS)
+                for pat in patches:
+                    for point in self.gridPoints:
+                        if pat.isPointInside(point):
+                            glVertex2f(point.getX(), point.getY())
+                glEnd()
         # Display model polygon RGB color at its vertices
         # interpolating smoothly the color in the interior
         # verts = self.m_model.getVerts()
@@ -127,13 +149,42 @@ class MyCanvas(QtOpenGL.QGLWidget):
         self.m_model = _model
 
     def fitWorldToViewport(self):
+        print("fitWorldToViewport")
         if self.m_model == None:
             return
-
         self.m_L, self.m_R, self.m_B, self.m_T = self.m_model.getBoundBox()
-
         self.scaleWorldWindow(1.1)
         self.update()
+
+    def showWidget(self):
+        print("showWidget")
+        self.widget.show()
+
+    def setGridPoints(self):
+        print("setGridPoints")
+        if self.m_model == None:
+            return
+        self.gridPoints = []
+        print(self.widget.t1.text())
+        print(self.widget.t2.text())
+        divsX = 3
+        divsY = 4
+        distX = (self.m_R - self.m_L) / divsX
+        distY = (self.m_T - self.m_B) / divsY
+        for i in range(1, divsX):
+            # self.gridPoints.append([Point(self.m_L + i * distX, self.m_B), Point(self.m_L + i * distX, self.m_T)])
+            for j in range(1, divsY):
+                self.gridPoints.append(Point(self.m_L + i * distX, self.m_B + j * distY))
+                print(self.m_L + i * distX, self.m_B + j * distY)
+                # self.gridPoints.append([Point(self.m_L, self.m_B + i * distY), Point(self.m_R, self.m_B + i * distY)])
+        
+        self.update()
+        self.paintGL()
+
+    def clearSegments(self):
+        self.gridPoints = []
+        self.update()
+        self.paintGL()
 
     def scaleWorldWindow(self, _scaleFac):
         # Compute canvas viewport distortion ratio.
@@ -202,10 +253,13 @@ class MyCanvas(QtOpenGL.QGLWidget):
         pt1_U = self.convertPtCoordsToUniverse(self.m_pt1)
         self.m_model.setCurve(pt0_U.x(), pt0_U.y(), pt1_U.x(), pt1_U.y())
 
-        self.hecontroller.insertSegment([pt0_U.x(), pt0_U.y(), pt1_U.x(), pt1_U.y()], 10e-2)
+        self.hecontroller.insertSegment([pt0_U.x(), pt0_U.y(), pt1_U.x(), pt1_U.y()], self.tol)
 
         self.m_buttonPressed = False
         self.m_pt0.setX(0.0)
         self.m_pt0.setY(0.0)
         self.m_pt1.setX(0.0)
         self.m_pt1.setY(0.0)
+        
+        self.update()
+        self.paintGL()
